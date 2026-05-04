@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Plugins/active-memory: skip session-store channel entries that contain `:` when resolving the recall subagent's channel, so QQ c2c agent IDs (e.g. `c2c:10D4F7C2…`) and other scoped conversation IDs do not reach bundled-plugin `dirName` validation and crash the recall run. The same guard already applied to explicit `channelId` params (#76704); this extends it to store-derived channels. (#77396) Thanks @hclsys.
 - Models/auth: add `openclaw models auth list [--provider <id>] [--json]` so users can inspect saved per-agent auth profiles without dumping secrets or hitting the old “too many arguments” path. Thanks @vincentkoc.
 - Control UI/header: show the active agent name in dashboard breadcrumbs without adding the current session key, keeping non-chat views oriented without crowding the topbar.
 - Control UI/cron: make the New Job sidebar collapsible so the jobs list can reclaim space while keeping the form one click away. Thanks @BunsDev.
@@ -46,10 +47,14 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Doctor/config: restore legacy group chat config migrations for `routing.allowFrom`, `routing.groupChat.*`, and `channels.telegram.requireMention` so upgrades keep WhatsApp, Telegram, and iMessage group mention gates and history settings instead of leaving configs invalid or silently blocked. Thanks @scoootscooob.
 - fix(gateway): clamp unbound websocket auth scopes [AI]. (#77413) Thanks @pgondhi987.
 - Gate zalouser startup name matching [AI]. (#77411) Thanks @pgondhi987.
+- Active Memory: send a bounded latest-message search query to the recall worker so channel/runtime metadata does not become the memory search string. Fixes #65309. Thanks @joeykrug, @westley3601, @pimenov, and @tasi333.
 - fix(device-pair): require pairing scope for pair command [AI]. (#76377) Thanks @pgondhi987.
 - fix(qqbot): keep private commands off framework surface [AI]. (#77212) Thanks @pgondhi987.
+- Claude CLI: honor non-off `/think` levels by passing Claude Code's session-scoped `--effort` flag through the CLI backend seam, so chat bridges no longer show an inert thinking control. Fixes #77303. Thanks @Petr1t.
+- Agents/subagents: refresh deferred final-delivery payloads when same-session completion output changes, so retried parent notifications use the final child summary instead of stale progress text. Thanks @vincentkoc.
 - Memory/wiki: preserve representation from both corpora in `corpus=all` searches while backfilling unused result capacity, so memory hits are not starved by numerically higher wiki integer scores. Fixes #77337. Thanks @hclsys.
 - Telegram: clean up tool-only draft previews after assistant message boundaries so transient `Surfacing...` tool-status bubbles do not linger when no matching final preview arrives. Thanks @BunsDev.
 - Cron: surface failed isolated-run diagnostics in `cron show`, status, and run history when requested tools are unavailable, so blocked cron runs report the actual tool-policy failure instead of a misleading green result. Fixes #75763. Thanks @RyanSandoval.
@@ -205,6 +210,9 @@ Docs: https://docs.openclaw.ai
 - TUI: replace the stale-response watchdog notice with plain user-facing copy so stalled replies no longer surface backend or streaming internals. (#77120) Thanks @davemorin.
 - Security/Windows: validate `SystemRoot`/`WINDIR` env values through the Windows install-root validator and add them to the dangerous-host-env policy when resolving `icacls.exe`/`whoami.exe` for `openclaw security audit`, so workspace `.env` overrides and bare command names cannot redirect Windows ACL helpers to attacker-controlled binaries. (#74458) Thanks @mmaps.
 - Security/Windows: pin Windows registry-probe `reg.exe` resolution to the canonical Windows install root in install-root probing, so `SystemRoot`/`WINDIR` env overrides cannot redirect registry queries during Windows host detection. (#74454) Thanks @mmaps.
+- QQBot: preserve the framework command authorization decision when converting framework command contexts into engine slash command contexts, so downstream slash handlers see `commandAuthorized` matching the channel's resolved `isAuthorizedSender` instead of a hardcoded `true`. (#77453) Thanks @drobison00.
+- Security/Windows: block `LOCALAPPDATA` from workspace `.env` and resolve Windows update-flow portable Git path prepends from the trusted process-local `LOCALAPPDATA` only, so workspace-supplied values cannot redirect `git` discovery during `openclaw update`. (#77470) Thanks @drobison00.
+- Browser/SSRF: enforce the existing current-tab URL navigation policy before tab-scoped debug, export, and read routes (console, page errors, network requests, trace start/stop, response body, screenshot, snapshot, storage, etc.) collect from an already-selected tab, so blocked tabs return a policy error instead of being read first and redacted only at response time. (#75731) Thanks @eleqtrizit.
 
 ## 2026.5.3-1
 
@@ -321,6 +329,7 @@ Docs: https://docs.openclaw.ai
 - CLI/message: exit cleanly with a nonzero status when message-command plugin registry loading fails before dispatch, preventing `openclaw-message` children from staying alive after plugin load errors. Fixes #76168.
 - Plugins/config: report configured plugins that are present but blocked by path-safety checks as blocked instead of stale `plugin not found` entries, and deduplicate repeated blocked-candidate warnings during discovery. Fixes #76144. Thanks @mayank6136.
 - Gateway/update: recover an installed-but-unloaded macOS LaunchAgent after package updates, rerun Gateway health/version/channel readiness checks, and print restart, reinstall, and rollback guidance before reporting update failure. (#76790) Thanks @jonathanlindsay.
+- Codex/runtime: preserve native Codex thread bindings across dynamic-tool reorder and no-tool maintenance turns, and project mirrored history when a legacy Codex run must start without a native binding, preventing follow-up requests from losing conversation context. (#76824) Thanks @VACInc.
 - CLI/plugins: explain when a missing plugin command alias belongs to a bundled plugin that is disabled by default, including the `openclaw plugins enable <plugin>` repair command. (#76835)
 - Gateway/Bonjour: auto-start LAN multicast discovery only on macOS hosts while preserving explicit `openclaw plugins enable bonjour` startup elsewhere, so Linux servers and containers that do not need LAN discovery avoid default mDNS probing and watchdog churn. Refs #74209.
 - Gateway/macOS: stop `doctor` and LaunchAgent recovery from running `launchctl kickstart -k` after a fresh bootstrap, avoiding an immediate SIGTERM of the just-started gateway while still nudging already-loaded launchd jobs. Fixes #76261. Thanks @solosage1.
@@ -457,7 +466,7 @@ Docs: https://docs.openclaw.ai
 - Status/update: resolve beta update-channel checks from the installed version when config still says `stable`, and let `status --deep` reuse live gateway channel credential state instead of warning on command-path-only token misses.
 - Doctor/plugins: preserve unmanaged third-party plugin `node_modules` during `doctor --fix`, while still pruning OpenClaw-managed runtime dependency caches.
 - Gateway/restart: add `openclaw gateway restart --force` and `--wait <duration>`, log active task run IDs before restart deferral timers, and report timeout restarts as explicit forced restarts.
-- Gateway/restart: align `gateway.restart.safe` preflight with scheduled restart deferral by counting only active restart blockers (running non-ended tasks), so queued task records no longer keep "safe" restarts deferred indefinitely.
+- Gateway/restart: align `gateway.restart.safe` preflight with scheduled restart deferral by counting only active restart blockers (running non-ended tasks), so queued task records no longer keep "safe" restarts deferred indefinitely. (#76923) Thanks @NikolaFC.
 - Discord: persist slash-command deploy hashes across process restarts so unchanged command sets skip redeploy and avoid restart-loop 429s.
 - Providers/LM Studio: normalize binary `off`/`on` reasoning metadata from Gemma 4 and other local models to LM Studio's accepted OpenAI-compatible `reasoning_effort` values.
 - Plugins/externalization: keep official external install docs, update examples, and live Codex npm checks on default npm tags instead of `@beta`. Thanks @vincentkoc.
@@ -465,7 +474,7 @@ Docs: https://docs.openclaw.ai
 - Plugins/ClawHub: fall back to version metadata when the artifact resolver route is missing and keep the Docker ClawHub fixture aligned with npm-pack artifact resolution, avoiding false version-not-found failures during plugin install validation. Thanks @vincentkoc.
 - Providers/openai-codex: honor `providerConfig.baseUrl` in the dynamic-model synthesis fallback so codex providers configured with a custom upstream (for example a forwarding proxy) no longer silently bypass the configured URL when the registry has no template row to clone for the requested model id. (#76428) Thanks @arniesaha.
 - Status/channels: show configured channels in `openclaw status` and config-only `openclaw channels status` output even when the Gateway is unreachable, avoiding empty Channels tables on WSL and other no-Gateway paths. Thanks @vincentkoc.
-- Agents/main-session: keep pending final delivery markers until the final reply is actually routed or queued, so restart and heartbeat recovery can retry failed delivery. Refs #65037.
+- Agents/main-session: keep pending final delivery markers until the final reply is actually routed or queued, so restart and heartbeat recovery can retry failed delivery. Refs #65037. (#75280) Thanks @MertBasar0.
 - Plugins/ClawHub: explain unavailable explicit ClawHub ClawPack artifact downloads with a temporary npm install hint while ClawHub artifact routing rolls out. Thanks @vincentkoc.
 - Media: accept home-relative `MEDIA:~/...` attachment paths while preserving existing file-read policy, traversal checks, and media type validation. Fixes #73796. Thanks @fabkury.
 - Onboarding/search: install official external web-search plugins such as Brave before saving provider config, and make doctor repair reconcile selected external search providers whose npm payload is missing. Thanks @vincentkoc.
