@@ -305,12 +305,13 @@ describe("config view", () => {
 
     const formButton = findButtonByText(container, "Form");
     const rawButton = findButtonByText(container, "Raw");
-    expect(formButton.classList.contains("active")).toBe(true);
+    expect([...formButton.classList]).toEqual(["config-mode-toggle__btn", "active"]);
     expect(rawButton.disabled).toBe(true);
     queryRequired(container, ".config-actions__notice", HTMLElement);
     const actionButtons = queryRequired(container, ".config-actions__buttons", HTMLElement);
-    expect(actionButtons.textContent).toContain("Reload");
-    expect(actionButtons.textContent).toContain("Update");
+    expect(
+      [...actionButtons.querySelectorAll("button")].map((button) => button.textContent?.trim()),
+    ).toEqual(["Reload", "Clear", "Save", "Apply", "Update"]);
     expect(normalizedText(container)).toContain(
       "Raw mode disabled (snapshot cannot safely round-trip raw text).",
     );
@@ -884,16 +885,10 @@ describe("config view", () => {
       onFormPatch,
     });
 
-    const input = container.querySelector<HTMLInputElement>(".cfg-input");
-    expect(input).toBeInstanceOf(HTMLInputElement);
-    expect(input?.readOnly).toBe(true);
-    expect(input?.value).toBe("");
-    expect(input?.placeholder).toContain("Structured value (SecretRef)");
-    expect(container.textContent ?? "").not.toContain("[object Object]");
-
-    if (!input) {
-      return;
-    }
+    const input = queryRequired(container, ".cfg-input", HTMLInputElement);
+    expect(input.readOnly).toBe(true);
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("Structured value (SecretRef) - use Raw mode to edit");
     input.value = "[object Object]";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -975,8 +970,12 @@ describe("config view", () => {
     const customButton = findButtonByText(container, "Import");
 
     expect(customButton.disabled).toBe(false);
-    expect(normalizedText(container)).toContain(
-      "Click Import to add one browser-local tweakcn theme",
+    expect(
+      normalizedText(
+        queryRequired(container, ".settings-theme-import__inline-hint", HTMLParagraphElement),
+      ),
+    ).toBe(
+      "Click Import to add one browser-local tweakcn theme. In tweakcn, use Share and paste the copied link here.",
     );
 
     customButton.click();
@@ -999,7 +998,13 @@ describe("config view", () => {
     expect(
       container.querySelector<HTMLAnchorElement>(".settings-theme-import__external")?.href,
     ).toBe("https://tweakcn.com/editor/theme");
-    expect(normalizedText(container)).toContain("Share links, editor URLs, registry URLs");
+    expect(
+      normalizedText(
+        queryRequired(container, ".settings-theme-import__hint", HTMLParagraphElement),
+      ),
+    ).toBe(
+      "Open tweakcn.com, choose or create a theme, click Share, then paste the copied theme link here. Share links, editor URLs, registry URLs, theme IDs, and default theme names like amethyst-haze are accepted.",
+    );
   });
 
   it("shows custom theme actions once a tweakcn import exists", () => {
@@ -1032,7 +1037,12 @@ describe("config view", () => {
 
     expect(onImportCustomTheme).toHaveBeenCalledTimes(1);
     expect(onClearCustomTheme).toHaveBeenCalledTimes(1);
-    expect(normalizedText(container)).toContain("Loaded Light Green");
+    expect(container.querySelector(".settings-theme-import__meta-label")?.textContent?.trim()).toBe(
+      "Loaded",
+    );
+    expect(container.querySelector(".settings-theme-import__meta-value")?.textContent?.trim()).toBe(
+      "Light Green \u00b7 https://tweakcn.com/themes/cmlhfpjhw000004l4f4ax3m7z",
+    );
 
     const input = container.querySelector(".settings-theme-import__input") as HTMLInputElement;
     input.value = "/r/themes/cmlhfpjhw000004l4f4ax3m7z";
