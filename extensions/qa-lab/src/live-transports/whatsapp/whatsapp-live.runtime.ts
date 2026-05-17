@@ -142,7 +142,10 @@ type WhatsAppCredentialHeartbeat = ReturnType<typeof startQaCredentialLeaseHeart
 
 const WHATSAPP_QA_CAPTURE_CONTENT_ENV = "OPENCLAW_QA_WHATSAPP_CAPTURE_CONTENT";
 const QA_REDACT_PUBLIC_METADATA_ENV = "OPENCLAW_QA_REDACT_PUBLIC_METADATA";
-const WHATSAPP_QA_TRANSIENT_DRIVER_ATTEMPTS = 3;
+const WHATSAPP_QA_TRANSIENT_DRIVER_ATTEMPTS = 5;
+const WHATSAPP_QA_READY_TIMEOUT_MS = 150_000;
+const WHATSAPP_QA_READY_STABILITY_MS = 8_000;
+const WHATSAPP_QA_DRIVER_RECONNECT_DELAY_MS = 10_000;
 const WHATSAPP_QA_ENV_KEYS = [
   "OPENCLAW_QA_WHATSAPP_DRIVER_PHONE_E164",
   "OPENCLAW_QA_WHATSAPP_SUT_PHONE_E164",
@@ -382,7 +385,7 @@ async function waitForWhatsAppChannelRunning(
         running?: boolean;
       }
     | undefined;
-  while (Date.now() - startedAt < 60_000) {
+  while (Date.now() - startedAt < WHATSAPP_QA_READY_TIMEOUT_MS) {
     try {
       const payload = (await gateway.call(
         "channels.status",
@@ -426,6 +429,15 @@ async function waitForWhatsAppChannelRunning(
     `whatsapp account "${accountId}" did not become ready` +
       (lastStatus ? `; last status: ${JSON.stringify(lastStatus)}` : ""),
   );
+}
+
+async function waitForWhatsAppChannelStable(
+  gateway: Awaited<ReturnType<typeof startQaGatewayChild>>,
+  accountId: string,
+) {
+  await waitForWhatsAppChannelRunning(gateway, accountId);
+  await new Promise((resolve) => setTimeout(resolve, WHATSAPP_QA_READY_STABILITY_MS));
+  await waitForWhatsAppChannelRunning(gateway, accountId);
 }
 
 async function listTarEntries(archivePath: string): Promise<string[]> {
@@ -475,6 +487,8 @@ function isTransientWhatsAppQaDriverError(error: unknown) {
   const message = formatErrorMessage(error);
   return (
     /\bConnection Closed\b/iu.test(message) ||
+    /\bconflict\b/iu.test(message) ||
+    /\bsession conflict\b/iu.test(message) ||
     /\btimed out waiting for WhatsApp QA driver message\b/iu.test(message)
   );
 }
@@ -485,6 +499,24 @@ async function restartWhatsAppQaDriverSession(params: {
 }) {
   await params.current.close().catch(() => {});
   return await startWhatsAppQaDriverSession({ authDir: params.authDir });
+}
+
+async function startWhatsAppQaDriverSessionWithRetry(params: { authDir: string }) {
+  let attempt = 1;
+  while (true) {
+    try {
+      return await startWhatsAppQaDriverSession({ authDir: params.authDir });
+    } catch (error) {
+      if (
+        attempt >= WHATSAPP_QA_TRANSIENT_DRIVER_ATTEMPTS ||
+        !isTransientWhatsAppQaDriverError(error)
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      await new Promise((resolve) => setTimeout(resolve, WHATSAPP_QA_DRIVER_RECONNECT_DELAY_MS));
+    }
+  }
 }
 
 async function runWhatsAppScenario(params: {
@@ -539,7 +571,7 @@ async function runWhatsAppScenario(params: {
   });
   let preservedGatewayDebug = false;
   try {
-    await waitForWhatsAppChannelRunning(gatewayHarness.gateway, params.sutAccountId);
+    await waitForWhatsAppChannelStable(gatewayHarness.gateway, params.sutAccountId);
     if (scenarioRun.quietInput) {
       const quietStartedAt = new Date();
       await params.driver.sendText(target, scenarioRun.quietInput);
@@ -771,7 +803,7 @@ export async function runWhatsAppQaLive(params: {
         parentDir: tempAuthRoot,
       }),
     ]);
-    let activeDriver = await startWhatsAppQaDriverSession({ authDir: driverAuthDir });
+    let activeDriver = await startWhatsAppQaDriverSessionWithRetry({ authDir: driverAuthDir });
     driver = activeDriver;
 
     for (const scenario of scenarios) {
@@ -819,6 +851,9 @@ export async function runWhatsAppQaLive(params: {
             isTransientWhatsAppQaDriverError(error)
           ) {
             driverAttempt += 1;
+            await new Promise((resolve) =>
+              setTimeout(resolve, WHATSAPP_QA_DRIVER_RECONNECT_DELAY_MS),
+            );
             try {
               activeDriver = await restartWhatsAppQaDriverSession({
                 authDir: driverAuthDir,
@@ -837,7 +872,10 @@ export async function runWhatsAppQaLive(params: {
             id: scenario.id,
             title: scenario.title,
             status: "fail",
-            details: formatErrorMessage(error),
+            details:
+              driverAttempt > 1
+                ? `${formatErrorMessage(error)}; driver reconnected ${driverAttempt - 1}x`
+                : formatErrorMessage(error),
           });
           break;
         }
