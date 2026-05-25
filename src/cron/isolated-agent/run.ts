@@ -5,6 +5,11 @@ import { retireSessionMcpRuntime } from "../../agents/pi-bundle-mcp-tools.js";
 import type { SkillSnapshot } from "../../agents/skills.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { CliDeps } from "../../cli/outbound-send-deps.js";
+import {
+  getRuntimeConfigSnapshot,
+  getRuntimeConfigSourceSnapshot,
+  selectApplicableRuntimeConfig,
+} from "../../config/config.js";
 import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { clearAgentRunContext } from "../../infra/agent-events.js";
@@ -16,11 +21,7 @@ import {
   type SourceDeliveryPlan,
   type SourceDeliveryVisibleDelivery,
 } from "../../infra/outbound/source-delivery-plan.js";
-import {
-  logMessageProcessed,
-  logMessageQueued,
-  logSessionStateChange,
-} from "../../logging/diagnostic.js";
+import { createDiagnosticMessageLifecycle } from "../../logging/message-lifecycle.js";
 import { isCommandLaneTaskTimeoutError } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
@@ -484,12 +485,28 @@ type CronPreparationResult =
   | { ok: true; context: PreparedCronRunContext }
   | { ok: false; result: RunCronAgentTurnResult };
 
+function resolveCronActiveRuntimeConfig(cfg: OpenClawConfig): OpenClawConfig {
+  const runtimeConfig = getRuntimeConfigSnapshot();
+  const runtimeSourceConfig = getRuntimeConfigSourceSnapshot();
+  if (!runtimeConfig || !runtimeSourceConfig) {
+    return cfg;
+  }
+  return (
+    selectApplicableRuntimeConfig({
+      inputConfig: cfg,
+      runtimeConfig,
+      runtimeSourceConfig,
+    }) ?? cfg
+  );
+}
+
 async function prepareCronRunContext(params: {
   input: RunCronAgentTurnParams;
   isFastTestEnv: boolean;
 }): Promise<CronPreparationResult> {
   const { input } = params;
-  const defaultAgentId = resolveDefaultAgentId(input.cfg);
+  const runtimeCfg = resolveCronActiveRuntimeConfig(input.cfg);
+  const defaultAgentId = resolveDefaultAgentId(runtimeCfg);
   const requestedAgentId =
     typeof input.agentId === "string" && input.agentId.trim()
       ? input.agentId
@@ -498,16 +515,16 @@ async function prepareCronRunContext(params: {
         : undefined;
   const normalizedRequested = requestedAgentId ? normalizeAgentId(requestedAgentId) : undefined;
   const agentConfigOverride = normalizedRequested
-    ? resolveAgentConfig(input.cfg, normalizedRequested)
+    ? resolveAgentConfig(runtimeCfg, normalizedRequested)
     : undefined;
   const agentId = normalizedRequested ?? defaultAgentId;
   const agentCfg: AgentDefaultsConfig = buildCronAgentDefaultsConfig({
-    defaults: input.cfg.agents?.defaults,
+    defaults: runtimeCfg.agents?.defaults,
     agentConfigOverride,
   });
   const cfgWithAgentDefaults: OpenClawConfig = {
-    ...input.cfg,
-    agents: Object.assign({}, input.cfg.agents, { defaults: agentCfg }),
+    ...runtimeCfg,
+    agents: Object.assign({}, runtimeCfg.agents, { defaults: agentCfg }),
   };
   let catalog: Awaited<ReturnType<CronModelCatalogRuntime["loadModelCatalog"]>> | undefined;
   const loadCatalog = async () => {
@@ -1192,19 +1209,16 @@ export async function runCronIsolatedAgentTurn(params: {
 
   const turnStartedAtMs = Date.now();
   const diagnosticsEnabled = isDiagnosticsEnabled(params.cfg);
-  if (diagnosticsEnabled) {
-    logMessageQueued({
-      sessionId: prepared.context.runSessionId,
-      sessionKey: prepared.context.runSessionKey,
-      channel: "cron",
-      source: "cron-isolated",
-    });
-    logSessionStateChange({
-      sessionId: prepared.context.runSessionId,
-      sessionKey: prepared.context.runSessionKey,
-      state: "processing",
-    });
-  }
+  const messageLifecycle = createDiagnosticMessageLifecycle({
+    enabled: diagnosticsEnabled,
+    sessionId: prepared.context.runSessionId,
+    sessionKey: prepared.context.runSessionKey,
+    channel: "cron",
+    source: "cron-isolated",
+    startedAtMs: turnStartedAtMs,
+    trackSessionState: true,
+  });
+  messageLifecycle.markProcessing();
 
   let outcome: "completed" | "error" = "completed";
   let outcomeError: string | undefined;
@@ -1279,21 +1293,16 @@ export async function runCronIsolatedAgentTurn(params: {
       ),
     });
   } finally {
-    if (diagnosticsEnabled) {
-      logSessionStateChange({
-        sessionId: prepared.context.currentRunSessionId(),
-        sessionKey: prepared.context.runSessionKey,
-        state: "idle",
-      });
-      logMessageProcessed({
-        channel: "cron",
-        sessionId: prepared.context.currentRunSessionId(),
-        sessionKey: prepared.context.runSessionKey,
-        durationMs: Date.now() - turnStartedAtMs,
-        outcome,
-        error: outcomeError,
-      });
-    }
+    // Final lifecycle events use the adopted run session when the agent persisted one.
+    const finalSessionRef = {
+      sessionId: prepared.context.currentRunSessionId(),
+      sessionKey: prepared.context.runSessionKey,
+    };
+    messageLifecycle.markIdle(undefined, finalSessionRef);
+    messageLifecycle.markProcessed(outcome, {
+      ...finalSessionRef,
+      error: outcomeError,
+    });
     // Release runtime references after the run completes (success or failure).
     // The session entry has already been persisted to disk by this point,
     // so the in-memory store and run context can be safely dropped.
