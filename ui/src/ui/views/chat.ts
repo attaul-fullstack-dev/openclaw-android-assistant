@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -13,7 +14,7 @@ import {
   CHAT_ATTACHMENT_ACCEPT,
   isSupportedChatAttachmentFile,
 } from "../chat/attachment-support.ts";
-import { buildChatItems } from "../chat/build-chat-items.ts";
+import { buildChatItems, type BuildChatItemsProps } from "../chat/build-chat-items.ts";
 import { renderChatQueue } from "../chat/chat-queue.ts";
 import { buildRawSidebarContent } from "../chat/chat-sidebar-raw.ts";
 import { renderWelcomeState, resolveAssistantDisplayAvatar } from "../chat/chat-welcome.ts";
@@ -21,6 +22,7 @@ import { renderContextNotice } from "../chat/context-notice.ts";
 import { DeletedMessages } from "../chat/deleted-messages.ts";
 import { exportChatMarkdown } from "../chat/export.ts";
 import {
+  getAssistantAttachmentAvailabilityRenderVersion,
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
@@ -177,7 +179,7 @@ export type ChatProps = {
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
-  composerControls?: TemplateResult | typeof nothing;
+  composerControls?: TemplateResult | typeof nothing | ReturnType<typeof guard>;
   workspaceFiles?: {
     agentId: string;
     list: AgentsFilesListResult | null;
@@ -486,12 +488,70 @@ function createChatEphemeralState(): ChatEphemeralState {
 
 const vs = createChatEphemeralState();
 
+type CachedChatItems = {
+  input: BuildChatItemsProps | null;
+  items: ReturnType<typeof buildChatItems>;
+};
+
+const chatItemsBySession = new Map<string, CachedChatItems>();
+
+function sameChatItemsInput(previous: BuildChatItemsProps, next: BuildChatItemsProps): boolean {
+  return (
+    previous.sessionKey === next.sessionKey &&
+    previous.messages === next.messages &&
+    previous.toolMessages === next.toolMessages &&
+    previous.streamSegments === next.streamSegments &&
+    previous.stream === next.stream &&
+    previous.streamStartedAt === next.streamStartedAt &&
+    previous.queue === next.queue &&
+    previous.showToolCalls === next.showToolCalls &&
+    previous.searchOpen === next.searchOpen &&
+    previous.searchQuery === next.searchQuery
+  );
+}
+
+function buildCachedChatItems(input: BuildChatItemsProps): ReturnType<typeof buildChatItems> {
+  const cached = getOrCreateSessionCacheValue(chatItemsBySession, input.sessionKey, () => ({
+    input: null,
+    items: [],
+  }));
+  if (cached.input && sameChatItemsInput(cached.input, input)) {
+    return cached.items;
+  }
+  const items = buildChatItems(input);
+  cached.input = input;
+  cached.items = items;
+  return items;
+}
+
+function deletedChatItemsSignature(
+  deleted: DeletedMessages,
+  chatItems: ReturnType<typeof buildChatItems>,
+): string {
+  const deletedKeys = chatItems
+    .map((item) => item.key)
+    .filter((key) => deleted.has(key))
+    .toSorted();
+  return deletedKeys.length === 0 ? "" : deletedKeys.join("\u0000");
+}
+
+function stableBooleanMapSignature(values: ReadonlyMap<string, boolean>): string {
+  if (values.size === 0) {
+    return "";
+  }
+  return Array.from(values)
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}:${value ? "1" : "0"}`)
+    .join("\u0000");
+}
+
 /**
  * Reset chat view ephemeral state when navigating away.
  * Clears search/slash UI that should not survive navigation.
  */
 export function resetChatViewState() {
   Object.assign(vs, createChatEphemeralState());
+  chatItemsBySession.clear();
 }
 
 export const cleanupChatModuleState = resetChatViewState;
@@ -835,6 +895,26 @@ function resetSlashMenuState(): void {
   vs.slashMenuExpanded = false;
 }
 
+function hasVisibleSlashMenuState(): boolean {
+  return (
+    vs.slashMenuOpen ||
+    vs.slashMenuMode !== "command" ||
+    vs.slashMenuCommand !== null ||
+    vs.slashMenuArgItems.length > 0 ||
+    vs.slashMenuItems.length > 0 ||
+    vs.slashMenuExpanded
+  );
+}
+
+function closeSlashMenuIfNeeded(requestUpdate: () => void): void {
+  if (!hasVisibleSlashMenuState()) {
+    return;
+  }
+  vs.slashMenuOpen = false;
+  resetSlashMenuState();
+  requestUpdate();
+}
+
 function updateSlashMenu(value: string, requestUpdate: () => void): void {
   // Arg mode: /command <partial-arg>
   const argMatch = value.match(/^\/(\S+)\s(.*)$/);
@@ -857,9 +937,7 @@ function updateSlashMenu(value: string, requestUpdate: () => void): void {
         return;
       }
     }
-    vs.slashMenuOpen = false;
-    resetSlashMenuState();
-    requestUpdate();
+    closeSlashMenuIfNeeded(requestUpdate);
     return;
   }
 
@@ -874,8 +952,8 @@ function updateSlashMenu(value: string, requestUpdate: () => void): void {
     vs.slashMenuCommand = null;
     vs.slashMenuArgItems = [];
   } else {
-    vs.slashMenuOpen = false;
-    resetSlashMenuState();
+    closeSlashMenuIfNeeded(requestUpdate);
+    return;
   }
   requestUpdate();
 }
@@ -1301,13 +1379,14 @@ export function renderChat(props: ChatProps) {
     );
   };
 
-  const chatItems = buildChatItems({
+  const chatItems = buildCachedChatItems({
     sessionKey: props.sessionKey,
     messages: props.messages,
     toolMessages: props.toolMessages,
     streamSegments: props.streamSegments,
     stream: displayStream,
     streamStartedAt: props.streamStartedAt,
+    queue: props.queue,
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,
     searchQuery: vs.searchQuery,
@@ -1321,6 +1400,8 @@ export function renderChat(props: ChatProps) {
   const hasRealtimeTalkConversation = (props.realtimeTalkConversation?.length ?? 0) > 0;
   const isEmpty = chatItems.length === 0 && !props.loading && !hasRealtimeTalkConversation;
   const showLoadingSkeleton = props.loading && chatItems.length === 0;
+  const threadContextWindow =
+    activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null;
 
   const thread = html`
     <div
@@ -1374,104 +1455,129 @@ export function renderChat(props: ChatProps) {
         ${isEmpty && vs.searchOpen
           ? html` <div class="agent-chat__empty">No matching messages</div> `
           : nothing}
-        ${repeat(
-          chatItems,
-          (item) => item.key,
-          (item) => {
-            if (item.kind === "divider") {
-              return html`
-                <div class="chat-divider" data-ts=${String(item.timestamp)}>
-                  <div class="chat-divider__rule" role="separator" aria-label=${item.label}>
-                    <span class="chat-divider__line"></span>
-                    <span class="chat-divider__label">${item.label}</span>
-                    <span class="chat-divider__line"></span>
-                  </div>
-                  ${item.description || item.action
-                    ? html`
-                        <div class="chat-divider__details">
-                          ${item.description
-                            ? html`<span class="chat-divider__description">
-                                ${item.description}
-                              </span>`
-                            : nothing}
-                          ${item.action?.kind === "session-checkpoints" &&
-                          props.onOpenSessionCheckpoints
-                            ? html`
-                                <button
-                                  type="button"
-                                  class="btn btn--subtle btn--sm chat-divider__action"
-                                  @click=${() => props.onOpenSessionCheckpoints?.()}
-                                >
-                                  ${item.action.label}
-                                </button>
-                              `
-                            : nothing}
-                        </div>
-                      `
-                    : nothing}
-                </div>
-              `;
-            }
-            if (item.kind === "reading-indicator") {
-              return renderReadingIndicatorGroup(
-                assistantIdentity,
-                props.basePath,
-                props.assistantAttachmentAuthToken ?? null,
-              );
-            }
-            if (item.kind === "stream") {
-              return renderStreamingGroup(
-                item.text,
-                item.startedAt,
-                item.isStreaming,
-                props.onOpenSidebar,
-                assistantIdentity,
-                props.basePath,
-                props.assistantAttachmentAuthToken ?? null,
-              );
-            }
-            if (item.kind === "group") {
-              if (deleted.has(item.key)) {
-                return nothing;
-              }
-              return renderMessageGroup(item, {
-                onOpenSidebar: props.onOpenSidebar,
-                sessionKey: props.sessionKey,
-                agentId: props.fullMessageAgentId,
-                showReasoning,
-                showToolCalls: props.showToolCalls,
-                autoExpandToolCalls: Boolean(props.autoExpandToolCalls),
-                isToolMessageExpanded: (messageId: string) => expandedToolCards.get(messageId),
-                onToggleToolMessageExpanded: (messageId: string, expanded?: boolean) => {
-                  expandedToolCards.set(
-                    messageId,
-                    !(expanded ?? expandedToolCards.get(messageId) ?? false),
+        ${guard(
+          [
+            chatItems,
+            deletedChatItemsSignature(deleted, chatItems),
+            stableBooleanMapSignature(expandedToolCards),
+            getAssistantAttachmentAvailabilityRenderVersion(),
+            props.sessionKey,
+            props.fullMessageAgentId,
+            showReasoning,
+            props.showToolCalls,
+            Boolean(props.autoExpandToolCalls),
+            props.assistantName,
+            assistantIdentity.avatar,
+            props.userName,
+            props.userAvatar,
+            props.basePath,
+            (props.localMediaPreviewRoots ?? []).join("\u0000"),
+            props.assistantAttachmentAuthToken,
+            props.canvasPluginSurfaceUrl,
+            props.embedSandboxMode ?? "scripts",
+            props.allowExternalEmbedUrls ?? false,
+            threadContextWindow,
+          ],
+          () =>
+            repeat(
+              chatItems,
+              (item) => item.key,
+              (item) => {
+                if (item.kind === "divider") {
+                  return html`
+                    <div class="chat-divider" data-ts=${String(item.timestamp)}>
+                      <div class="chat-divider__rule" role="separator" aria-label=${item.label}>
+                        <span class="chat-divider__line"></span>
+                        <span class="chat-divider__label">${item.label}</span>
+                        <span class="chat-divider__line"></span>
+                      </div>
+                      ${item.description || item.action
+                        ? html`
+                            <div class="chat-divider__details">
+                              ${item.description
+                                ? html`<span class="chat-divider__description">
+                                    ${item.description}
+                                  </span>`
+                                : nothing}
+                              ${item.action?.kind === "session-checkpoints" &&
+                              props.onOpenSessionCheckpoints
+                                ? html`
+                                    <button
+                                      type="button"
+                                      class="btn btn--subtle btn--sm chat-divider__action"
+                                      @click=${() => props.onOpenSessionCheckpoints?.()}
+                                    >
+                                      ${item.action.label}
+                                    </button>
+                                  `
+                                : nothing}
+                            </div>
+                          `
+                        : nothing}
+                    </div>
+                  `;
+                }
+                if (item.kind === "reading-indicator") {
+                  return renderReadingIndicatorGroup(
+                    assistantIdentity,
+                    props.basePath,
+                    props.assistantAttachmentAuthToken ?? null,
                   );
-                  requestUpdate();
-                },
-                isToolExpanded: (toolCardId: string) => expandedToolCards.get(toolCardId) ?? false,
-                onToggleToolExpanded: toggleToolCardExpanded,
-                onRequestUpdate: requestUpdate,
-                assistantName: props.assistantName,
-                assistantAvatar: assistantIdentity.avatar,
-                userName: props.userName ?? null,
-                userAvatar: props.userAvatar ?? null,
-                basePath: props.basePath,
-                localMediaPreviewRoots: props.localMediaPreviewRoots ?? [],
-                assistantAttachmentAuthToken: props.assistantAttachmentAuthToken ?? null,
-                canvasPluginSurfaceUrl: props.canvasPluginSurfaceUrl,
-                embedSandboxMode: props.embedSandboxMode ?? "scripts",
-                allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
-                contextWindow:
-                  activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null,
-                onDelete: () => {
-                  deleted.delete(item.key);
-                  requestUpdate();
-                },
-              });
-            }
-            return nothing;
-          },
+                }
+                if (item.kind === "stream") {
+                  return renderStreamingGroup(
+                    item.text,
+                    item.startedAt,
+                    item.isStreaming,
+                    props.onOpenSidebar,
+                    assistantIdentity,
+                    props.basePath,
+                    props.assistantAttachmentAuthToken ?? null,
+                  );
+                }
+                if (item.kind === "group") {
+                  if (deleted.has(item.key)) {
+                    return nothing;
+                  }
+                  return renderMessageGroup(item, {
+                    onOpenSidebar: props.onOpenSidebar,
+                    sessionKey: props.sessionKey,
+                    agentId: props.fullMessageAgentId,
+                    showReasoning,
+                    showToolCalls: props.showToolCalls,
+                    autoExpandToolCalls: Boolean(props.autoExpandToolCalls),
+                    isToolMessageExpanded: (messageId: string) => expandedToolCards.get(messageId),
+                    onToggleToolMessageExpanded: (messageId: string, expanded?: boolean) => {
+                      expandedToolCards.set(
+                        messageId,
+                        !(expanded ?? expandedToolCards.get(messageId) ?? false),
+                      );
+                      requestUpdate();
+                    },
+                    isToolExpanded: (toolCardId: string) =>
+                      expandedToolCards.get(toolCardId) ?? false,
+                    onToggleToolExpanded: toggleToolCardExpanded,
+                    onRequestUpdate: requestUpdate,
+                    assistantName: props.assistantName,
+                    assistantAvatar: assistantIdentity.avatar,
+                    userName: props.userName ?? null,
+                    userAvatar: props.userAvatar ?? null,
+                    basePath: props.basePath,
+                    localMediaPreviewRoots: props.localMediaPreviewRoots ?? [],
+                    assistantAttachmentAuthToken: props.assistantAttachmentAuthToken ?? null,
+                    canvasPluginSurfaceUrl: props.canvasPluginSurfaceUrl,
+                    embedSandboxMode: props.embedSandboxMode ?? "scripts",
+                    allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
+                    contextWindow: threadContextWindow,
+                    onDelete: () => {
+                      deleted.delete(item.key);
+                      requestUpdate();
+                    },
+                  });
+                }
+                return nothing;
+              },
+            ),
         )}
         ${renderRealtimeTalkConversation(props)}
       </div>
