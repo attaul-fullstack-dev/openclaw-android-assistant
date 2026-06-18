@@ -735,21 +735,21 @@ bash scripts/build-server-bundle.sh && ./gradlew assembleDebug \
   <div class="release-body" style="color:var(--text-dim);font-size:.92rem;line-height:1.75;max-width:800px">
   <h3>Changes</h3>
     <ul>
-    <li>Providers/models: add GLM-5.2 support and Claude Haiku 4.5 catalog entries while keeping provider-qualified model IDs normalized across OpenRouter and Google Vertex paths. (#92796, #90116, #92627, #91218) @liuhao1024, @bymle, @maaron34, and @lijenhsin</li>
+    <li>Providers/models: add GLM-5.2 support and Claude Haiku 4.5 catalog entries while keeping provider-qualified model IDs normalized across OpenRouter and Google Vertex paths. (#92796, #90116, #92627, #91218) @liuhao1024, @bymle, @maaron34, @lijenhsin, @davemorin, and @vincentkoc</li>
     <li>Web search: keep key-free providers such as Parallel Free, DuckDuckGo, Ollama, and Codex Hosted Search as explicit opt-ins instead of selecting them automatically when no API-backed provider is configured. and @vincentkoc</li>
-    <li>Channel plugins: ship Telegram rich-message delivery and WhatsApp ACP binding support, including preserved intentional line breaks, rich prompt handoff to CLI backends, and transport fixtures for richer drafts. (#92679, #93164, #92513) @TurboTheTurtle, @vincentkoc, and @mcaxtr</li>
-    <li>Agent commands: support `/btw` in CLI-backed sessions and keep CLI usage-error exits classified as usage failures instead of successful runs. (#92669, #92162) @Pandah97, and @marcospaulo</li>
+    <li>Channel plugins: ship Telegram rich-message delivery and WhatsApp ACP binding support, including preserved intentional line breaks, rich prompt handoff to CLI backends, and transport fixtures for richer drafts. (#92679, #93164, #92513) @TurboTheTurtle, @vincentkoc, @mcaxtr, and @dmorn</li>
+    <li>Agent commands: support `/btw` in CLI-backed sessions and keep CLI usage-error exits classified as usage failures instead of successful runs. (#92669, #92162) @Pandah97, @marcospaulo, @davemorin, and @vincentkoc</li>
     <li>Usage hooks: add built-in full footer rendering, default footer templates, per-turn usage state, credential-aware limits, and fixed-decimal formatting for usage-bar templates. (#92657, #89835, #89629)</li>
     </ul>
     <h3>Fixes</h3>
     <ul>
-    <li>Channels and delivery: preserve account-scoped DM channel send policy, intentional rich-message line breaks in Telegram and status output, rich Telegram final replies, rich Telegram tables and lists, Telegram thread-create CLI remapping, Feishu dynamic-agent routes after persisted binding reuse, Slack outbound `message_sent` hooks, contributed message-tool schema optionality, same-channel generated media completions, and channel chunking around surrogate pairs and Infinity limits. (#92788, #93164, #92679, #89421, #89943, #42837, #92814, #91137, #91246, #92735) @obviyus, @spacegeologist, @rishitamrakar, @liuhao1024, @lundog, @TurboTheTurtle, @yhterrance, @vincentkoc, @myrzka, @cwlong163-afk, and @kumaxs</li>
+    <li>Channels and delivery: preserve account-scoped DM channel send policy, intentional rich-message line breaks in Telegram and status output, rich Telegram final replies, rich Telegram tables and lists, Telegram thread-create CLI remapping, Feishu dynamic-agent routes after persisted binding reuse, Slack outbound `message_sent` hooks, contributed message-tool schema optionality, same-channel generated media completions, and channel chunking around surrogate pairs and Infinity limits. (#92788, #93164, #92679, #89421, #89943, #42837, #92814, #91137, #91246, #92735) @obviyus, @spacegeologist, @rishitamrakar, @liuhao1024, @lundog, @TurboTheTurtle, @yhterrance, @vincentkoc, @myrzka, @cwlong163-afk, @kumaxs, @shakkernerd, and @RewardsPal</li>
     <li>Gemini CLI: use the selected OpenClaw OAuth/API-key auth profile in an isolated Gemini CLI runtime home, preventing ambient Google machine credentials from overriding the chosen profile. and @shakkernerd</li>
     <li>Discord: give generated auto-thread titles a 60-second timeout and 4,096-token reasoning-model output budget, clamped to the selected model output cap</li>
-    <li>Agent, cron, and Gateway runtime: mark active main sessions before restart shutdown aborts, pause yielded subagent runs whose terminal also signals abort, clamp trusted subagent thinking overrides through provider/model fallback, preserve yielded media completions, deliver channel message-tool final replies through auto-reply while hiding internal delivery hints, restore reset archive fallback reads when active async transcripts are missing, de-duplicate main-session heartbeat events, expose session identity in runtime prompts, reject unknown OpenAI agent selectors, keep generated media completions, slash-command block replies, and trajectory export commands in WebChat, and require admin privileges for HTTP session/model override surfaces. (#91357, #92631, #92412, #92146, #92879, #91287, #92468, #92510, #91246, #92651, #92646) @openperf, @IWhatsskill, @masatohoshino, @CadanHu, @ZengWen-DT, @zhangguiping-xydt, @TurboTheTurtle, @oiGaDio, @aleps001, @vincentkoc, @GSL-R, @QQSHI13, @ryanhelms, @kumaxs, and @steipete-oai</li>
-    <li>Providers and model replay: preserve storeless OpenAI Responses replay compatibility, recover invalid OpenAI reasoning signatures and genericized Anthropic thinking-signature replay errors, route OAuth image defaults through Codex for eligible OpenAI profiles, avoid eager tool streaming for Claude 4.5 in Copilot, quarantine unreadable and post-hook OpenAI/Anthropic-family tool schemas without broadening allowed tool choices, deliver explicit thinking-off requests to LM Studio binary-thinking models, honor profile auth for SecretRef model entries, bound model browsing, strip provider prefixes where runtimes need bare IDs, and surface nested embedding fetch failures. (#90706, #92941, #92201, #92916, #92824, #75393, #92908, #92921, #92928, #92002, #90686, #92247, #92627, #91218, #92628) @mmyzwl, @CarlCapital, @bek91, @Kailigithub, @vincentkoc, @rohitjavvadi, @samson910022, @nxmxbbd, @liuhao1024, @bymle, @mushuiyu886, @finchinslc, @syfvb, @lijenhsin, @crsnpalmer-art, and @samson1357924</li>
-    <li>Memory, state, diagnostics, and config: split header-too-large embedding batches, keep QMD memory search enabled in transient mode, avoid SQLite WAL on NFS volumes, preserve recovery scheduling outside stuck-session warning backoff, preserve full-reindex rollback/cache recovery, and treat raw Memory Wiki source pages as source evidence. (#92650, #92618, #92639, #91247, #92752, #92881, #59137, #92876) @TurboTheTurtle, @849261680, @gnanam1990, @TSHOGX, @vincentkoc, @arlen8411, @BrettHamlin, @zhbcher, @Takhoffman, and @AFabyTWE</li>
-    <li>UI/mobile/TUI: preserve dashboard session parent lineage, WebChat backscroll, reset soft command args, sidebar session picker interactivity, collapsed workspace files, resolved `/model` confirmation refs, stale foreground iOS Gateway reconnects, and paused setup-parent stdin after inherited-stdio child exit. (#90658, #92622, #91353, #92705, #92779, #92773, #92552, #93159) @TurboTheTurtle, @zhouhe-xydt, @NianJiuZst, @shakkernerd, @NarahariRaghava, @Solvely-Colin, @fuller-stack-dev, @lily-oc, @MaBeitian, and @vincentkoc</li>
+    <li>Agent, cron, and Gateway runtime: mark active main sessions before restart shutdown aborts, pause yielded subagent runs whose terminal also signals abort, clamp trusted subagent thinking overrides through provider/model fallback, preserve yielded media completions, deliver channel message-tool final replies through auto-reply while hiding internal delivery hints, restore reset archive fallback reads when active async transcripts are missing, de-duplicate main-session heartbeat events, expose session identity in runtime prompts, reject unknown OpenAI agent selectors, keep generated media completions, slash-command block replies, and trajectory export commands in WebChat, and require admin privileges for HTTP session/model override surfaces. (#91357, #92631, #92412, #92146, #92879, #91287, #92468, #92510, #91246, #92651, #92646) @openperf, @IWhatsskill, @masatohoshino, @CadanHu, @ZengWen-DT, @zhangguiping-xydt, @TurboTheTurtle, @oiGaDio, @aleps001, @vincentkoc, @GSL-R, @QQSHI13, @ryanhelms, @kumaxs, @steipete-oai, @hxy91819, @davemorin, and @nailujac</li>
+    <li>Providers and model replay: preserve storeless OpenAI Responses replay compatibility, recover invalid OpenAI reasoning signatures and genericized Anthropic thinking-signature replay errors, route OAuth image defaults through Codex for eligible OpenAI profiles, avoid eager tool streaming for Claude 4.5 in Copilot, quarantine unreadable and post-hook OpenAI/Anthropic-family tool schemas without broadening allowed tool choices, deliver explicit thinking-off requests to LM Studio binary-thinking models, honor profile auth for SecretRef model entries, bound model browsing, strip provider prefixes where runtimes need bare IDs, and surface nested embedding fetch failures. (#90706, #92941, #92201, #92916, #92824, #75393, #92908, #92921, #92928, #92002, #90686, #92247, #92627, #91218, #92628) @mmyzwl, @CarlCapital, @bek91, @Kailigithub, @vincentkoc, @rohitjavvadi, @samson910022, @nxmxbbd, @liuhao1024, @bymle, @mushuiyu886, @finchinslc, @syfvb, @lijenhsin, @crsnpalmer-art, @samson1357924, @shakkernerd, and @mlaihk</li>
+    <li>Memory, state, diagnostics, and config: split header-too-large embedding batches, keep QMD memory search enabled in transient mode, avoid SQLite WAL on NFS volumes, preserve recovery scheduling outside stuck-session warning backoff, preserve full-reindex rollback/cache recovery, and treat raw Memory Wiki source pages as source evidence. (#92650, #92618, #92639, #91247, #92752, #92881, #59137, #92876) @TurboTheTurtle, @849261680, @gnanam1990, @TSHOGX, @vincentkoc, @arlen8411, @BrettHamlin, @zhbcher, @Takhoffman, @AFabyTWE, @davemorin, and @zhuyankarl</li>
+    <li>UI/mobile/TUI: preserve dashboard session parent lineage, WebChat backscroll, reset soft command args, sidebar session picker interactivity, collapsed workspace files, resolved `/model` confirmation refs, stale foreground iOS Gateway reconnects, and paused setup-parent stdin after inherited-stdio child exit. (#90658, #92622, #91353, #92705, #92779, #92773, #92552, #93159) @TurboTheTurtle, @zhouhe-xydt, @NianJiuZst, @shakkernerd, @NarahariRaghava, @Solvely-Colin, @fuller-stack-dev, @lily-oc, @MaBeitian, @vincentkoc, @obviyus, @DrtyMorty, and @Chang2020618</li>
     <li>Plugins and updates: repair missing required platform packages during managed plugin installs and updates, including omitted Codex platform binaries</li>
     <li>Dependencies: update Hono to 4.12.25 so published OpenClaw and ACPX packages use the patched runtime</li>
     <li>Updates: avoid a false downgrade prompt when the latest tag cannot resolve. and @vincentkoc</li>
@@ -757,7 +757,7 @@ bash scripts/build-server-bundle.sh && ./gradlew assembleDebug \
     <li>**PR #92175** fix(channel): harden local setup trust</li>
     <li>**PR #91528** fix #73837: stop after failed Node package installs. and @ItsMeForLua</li>
     <li>**PR #91561** fix(wizard): report keyless web_search providers as ready, not missing a key</li>
-    <li>**PR #92073** fix: handle explicit silent assistant replies</li>
+    <li>**PR #92073** fix: handle explicit silent assistant replies. Related #92038. and @vultusv</li>
     <li>**PR #91311** Allow Skill Workshop apply through trusted skill symlinks</li>
     <li>**PR #88245** refactor(whatsapp): introduce inbound message contexts</li>
     <li>**PR #92212** refactor: move workspace skill writes to lifecycle</li>
@@ -768,22 +768,22 @@ bash scripts/build-server-bundle.sh && ./gradlew assembleDebug \
     <li>**PR #92087** fix(docker): bundle QA Lab runtime in the image</li>
     <li>**PR #92004** fix(telegram): classify streaming preview edit failures instead of killing the draft</li>
     <li>**PR #91997** fix(telegram): survive getUpdates conflicts in isolated polling ingress</li>
-    <li>**PR #92387** fix(anthropic-vertex): stop re-marking cache_control on transport-budgeted payloads. and @Takhoffman</li>
-    <li>**PR #92229** Fix doctor preview channel SecretRef resolution</li>
-    <li>**PR #92225** Fix disabled heartbeat one-shot cron retries</li>
-    <li>**PR #92265** Fix configured DeepSeek model transport inheritance</li>
-    <li>**PR #92226** Fail closed for CLI-backed /btw fallback</li>
-    <li>**PR #92231** Fix suppressed heartbeat commitment delivery</li>
-    <li>**PR #92280** fix(agents): classify structured unsupported model errors</li>
-    <li>**PR #92276** Fix OTLP log trace correlation</li>
-    <li>**PR #92282** fix(update): hand off Linux service auto-updates</li>
-    <li>**PR #92235** fix: resolve managed SecretRef provider auth</li>
-    <li>**PR #92293** Fix provider static model fallback resolution</li>
-    <li>**PR #92343** fix(agent): continue after source message tool replies</li>
+    <li>**PR #92387** fix(anthropic-vertex): stop re-marking cache_control on transport-budgeted payloads. Related #91982. and @Takhoffman and @danieljimz</li>
+    <li>**PR #92229** Fix doctor preview channel SecretRef resolution. Related #91939. and @Niriakot</li>
+    <li>**PR #92225** Fix disabled heartbeat one-shot cron retries. Related #91775. and @A1fred-AI</li>
+    <li>**PR #92265** Fix configured DeepSeek model transport inheritance. Related #92148. and @marcoraepple-sys</li>
+    <li>**PR #92226** Fail closed for CLI-backed /btw fallback. Related #92168. and @wangwllu</li>
+    <li>**PR #92231** Fix suppressed heartbeat commitment delivery. Related #91948. and @bizzle12368239</li>
+    <li>**PR #92280** fix(agents): classify structured unsupported model errors. Related #92118. and @pikaqqqqqq</li>
+    <li>**PR #92276** Fix OTLP log trace correlation. Related #91865. and @sinzin91</li>
+    <li>**PR #92282** fix(update): hand off Linux service auto-updates. Related #91823. and @hanyizuo</li>
+    <li>**PR #92235** fix: resolve managed SecretRef provider auth. Related #92097. and @LINSUISHENG034</li>
+    <li>**PR #92293** Fix provider static model fallback resolution. Related #92009. and @mattsfraser</li>
+    <li>**PR #92343** fix(agent): continue after source message tool replies. Related #92169. and @elyalvarado</li>
     <li>**PR #92350** fix(codex): preserve memory prompt registration. and @sallyom</li>
-    <li>**PR #92290** fix: clarify gateway SecretRef auth diagnostics</li>
-    <li>**PR #92286** fix: repair rejected Anthropic thinking replay</li>
-    <li>**PR #92281** Fix Telegram spooled buffered replay</li>
+    <li>**PR #92290** fix: clarify gateway SecretRef auth diagnostics. Related #91815. and @mattsfraser</li>
+    <li>**PR #92286** fix: repair rejected Anthropic thinking replay. Related #91983. and @reginaldomarcilon</li>
+    <li>**PR #92281** Fix Telegram spooled buffered replay. Related #92129. and @riseandshinefutures</li>
     <li>**PR #47493** fix(doctor): show per-step progress spinners during update</li>
     <li>**PR #92416** fix(outbound): honor top-level image param as send media source . and @ichirokyoto</li>
     <li>**PR #92508** fix(sandbox): render CLI skill prompts from materialized paths</li>
