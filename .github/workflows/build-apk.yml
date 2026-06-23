@@ -35,12 +35,10 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build Vue frontend
-        working-directory: openclaw-android
-        run: pnpm run build:frontend
+        run: pnpm -w --filter @friuns/codexui run build:frontend
 
       - name: Build CLI server
-        working-directory: openclaw-android
-        run: pnpm run build:cli
+        run: pnpm -w --filter @friuns/codexui run build:cli
 
       - name: Bundle server into APK assets
         run: |
