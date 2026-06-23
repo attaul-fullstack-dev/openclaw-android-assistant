@@ -35,13 +35,25 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build Vue frontend
+        working-directory: openclaw-android
         run: pnpm run build:frontend
 
       - name: Build CLI server
+        working-directory: openclaw-android
         run: pnpm run build:cli
 
       - name: Bundle server into APK assets
-        run: bash android/scripts/build-server-bundle.sh
+        run: |
+          set -euo pipefail
+          ASSETS_DIR="android/app/src/main/assets/server-bundle"
+          echo "Copying built artifacts from openclaw-android into $ASSETS_DIR"
+          rm -rf "$ASSETS_DIR"
+          mkdir -p "$ASSETS_DIR/dist"
+          mkdir -p "$ASSETS_DIR/dist-cli"
+          cp -r openclaw-android/dist/ "$ASSETS_DIR/dist/" || true
+          cp -r openclaw-android/dist-cli/ "$ASSETS_DIR/dist-cli/" || true
+          cp openclaw-android/package.json "$ASSETS_DIR/package.json" || true
+          (cd "$ASSETS_DIR" && npm install --omit=dev --ignore-scripts 2>/dev/null || true)
 
       - name: Download Termux bootstrap
         run: bash android/scripts/download-bootstrap.sh
