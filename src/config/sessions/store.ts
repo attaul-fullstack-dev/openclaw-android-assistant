@@ -58,7 +58,6 @@ import {
 } from "./store-load.js";
 import {
   applyFileBackedSessionStoreMaintenance,
-  applyQuotaSuspensionTtlMaintenance,
   type SessionMaintenanceApplyReport,
 } from "./store-maintenance-operations.js";
 import { resolveMaintenanceConfig } from "./store-maintenance-runtime.js";
@@ -66,7 +65,6 @@ import {
   capEntryCount,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
-  type QuotaSuspensionMaintenanceResult,
   type ResolvedSessionMaintenanceConfig,
   type SessionMaintenanceWarning,
 } from "./store-maintenance.js";
@@ -84,7 +82,6 @@ export {
   drainSessionStoreWriterQueuesForTest,
   getSessionStoreWriterQueueSizeForTest,
 } from "./store-writer-state.js";
-export { withSessionStoreWriterForTest } from "./store-writer.js";
 export {
   loadSessionStore,
   readSessionEntries,
@@ -1604,28 +1601,6 @@ export async function cleanupSessionLifecycleArtifacts(
         nowMs,
       })),
   };
-}
-
-export async function runQuotaSuspensionMaintenance(params: {
-  storePath: string;
-  now?: number;
-  ttlMs?: number;
-  log?: boolean;
-}): Promise<QuotaSuspensionMaintenanceResult> {
-  if (!fs.existsSync(params.storePath)) {
-    return { resumed: [], cleared: 0 };
-  }
-  return await runExclusiveSessionStoreWrite(params.storePath, async () => {
-    const store = loadMutableSessionStoreForWriter(params.storePath);
-    const result = applyQuotaSuspensionTtlMaintenance({
-      store,
-      now: params.now ?? Date.now(),
-      ttlMs: params.ttlMs,
-      log: params.log,
-    });
-    await saveSessionStoreUnlocked(params.storePath, store, { skipMaintenance: true });
-    return result;
-  });
 }
 
 function getErrorCode(error: unknown): string | null {
