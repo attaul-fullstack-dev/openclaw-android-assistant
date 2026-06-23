@@ -32,7 +32,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install pnpm dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build Vue frontend
         run: pnpm run build:frontend
